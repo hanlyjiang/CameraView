@@ -54,6 +54,7 @@ public class CameraInterface implements Camera.PreviewCallback {
     private static final String TAG = "CJT";
 
     private volatile static CameraInterface mCameraInterface;
+    private CameraPreparedCallback cameraPreparedCallback;
 
     public static void destroyCameraInterface() {
         if (mCameraInterface != null) {
@@ -369,9 +370,13 @@ public class CameraInterface implements Camera.PreviewCallback {
                 Camera.Size previewSize = CameraParamUtil.getInstance().getPreviewSize(mParams
                         .getSupportedPreviewSizes(), 1000, screenProp);
                 Camera.Size pictureSize = CameraParamUtil.getInstance().getPictureSize(mParams
-                        .getSupportedPictureSizes(), 1200, screenProp);
+                        .getSupportedPictureSizes(), 1000, screenProp);
 
                 mParams.setPreviewSize(previewSize.width, previewSize.height);
+
+                if(cameraPreparedCallback != null){
+                    cameraPreparedCallback.onCameraPrepared(previewSize.width, previewSize.height, screenProp);
+                }
 
                 preview_width = previewSize.width;
                 preview_height = previewSize.height;
@@ -740,6 +745,9 @@ public class CameraInterface implements Camera.PreviewCallback {
         this.errorLisenter = errorLisenter;
     }
 
+    void setCameraPreparedCallback(CameraPreparedCallback cameraPreparedCallback) {
+        this.cameraPreparedCallback = cameraPreparedCallback;
+    }
 
     public interface StopRecordCallback {
         void recordResult(String url, Bitmap firstFrame);
@@ -747,6 +755,10 @@ public class CameraInterface implements Camera.PreviewCallback {
 
     interface ErrorCallback {
         void onError();
+    }
+
+    interface CameraPreparedCallback{
+        void onCameraPrepared(int previewWidth, int previewHeight, float screenRate);
     }
 
     public interface TakePictureCallback {

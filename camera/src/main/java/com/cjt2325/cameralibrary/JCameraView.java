@@ -9,6 +9,7 @@ import android.hardware.Camera;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Build;
+import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -45,7 +46,7 @@ import java.io.IOException;
  * =====================================
  */
 public class JCameraView extends FrameLayout implements CameraInterface.CameraOpenOverCallback, SurfaceHolder
-        .Callback, CameraView {
+        .Callback, CameraView, CameraInterface.CameraPreparedCallback {
 //    private static final String TAG = "JCameraView";
 
     //Camera状态机
@@ -113,6 +114,9 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
 
     private boolean firstTouch = true;
     private float firstTouchLength = 0;
+
+    // 记录相机预览画面的分辨率
+    private int previewHeight, previewWidth;
 
     public JCameraView(Context context) {
         this(context, null);
@@ -282,7 +286,7 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
     //生命周期onResume
     public void onResume() {
         LogUtil.i("JCameraView onResume");
-        resetState(TYPE_DEFAULT); //重置状态
+//        resetState(TYPE_DEFAULT); //重置状态
         CameraInterface.getInstance().registerSensorManager(mContext);
         CameraInterface.getInstance().setSwitchView(mSwitchCamera, mFlashLamp);
         machine.start(mVideoView.getHolder(), screenProp);
@@ -304,6 +308,7 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
         new Thread() {
             @Override
             public void run() {
+                CameraInterface.getInstance().setCameraPreparedCallback(JCameraView.this);
                 CameraInterface.getInstance().doOpenCamera(JCameraView.this);
             }
         }.start();
@@ -381,7 +386,7 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
             int height = (int) ((videoHeight / videoWidth) * getWidth());
             videoViewParam = new LayoutParams(LayoutParams.MATCH_PARENT, height);
             videoViewParam.gravity = Gravity.CENTER;
-            mVideoView.setLayoutParams(videoViewParam);
+            setVideoViewSize(videoViewParam);
         }
     }
 
@@ -424,7 +429,7 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
                 stopVideo();    //停止播放
                 //初始化VideoView
                 FileUtil.deleteFile(videoUrl);
-                mVideoView.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                setVideoViewSize(getVideoViewLayoutParams());
                 machine.start(mVideoView.getHolder(), screenProp);
                 break;
             case TYPE_PICTURE:
@@ -433,7 +438,7 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
             case TYPE_SHORT:
                 break;
             case TYPE_DEFAULT:
-                mVideoView.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                setVideoViewSize(getVideoViewLayoutParams());
                 break;
         }
         mSwitchCamera.setVisibility(VISIBLE);
@@ -441,12 +446,35 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
         mCaptureLayout.resetCaptureLayout();
     }
 
+    @NonNull
+    private LayoutParams getVideoViewLayoutParams() {
+        if (previewWidth == 0 || previewHeight == 0) {
+            return new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        }
+        int height = 0;
+        int width = 0;
+        float previewRatio = (float) previewWidth / previewHeight;// 预览画面的高/宽
+        if (screenProp > previewRatio) { //预览比屏幕宽
+            height = getMeasuredHeight();
+            width = (int) (height / previewRatio);
+        } else if (screenProp == previewRatio) {
+            height = getMeasuredHeight();
+            width = getMeasuredWidth();
+        } else {
+            width = getMeasuredWidth();
+            height = (int) (width * previewRatio);
+        }
+        LogUtil.i("CJT", "PreviewSize：" + previewWidth + "," + previewHeight
+                + "；AdjustPreviewViewSize" + +width + "," + height);
+        return new LayoutParams(width, height);
+    }
+
     @Override
     public void confirmState(int type) {
         switch (type) {
             case TYPE_VIDEO:
                 stopVideo();    //停止播放
-                mVideoView.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                setVideoViewSize(getVideoViewLayoutParams());
                 machine.start(mVideoView.getHolder(), screenProp);
                 if (jCameraLisenter != null) {
                     jCameraLisenter.recordSuccess(videoUrl, firstFrame);
@@ -466,11 +494,17 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
         mCaptureLayout.resetCaptureLayout();
     }
 
+    private void setVideoViewSize(LayoutParams videoViewLayoutParams) {
+        mVideoView.setLayoutParams(videoViewLayoutParams);
+    }
+
     @Override
     public void showPicture(Bitmap bitmap, boolean isVertical) {
         if (isVertical) {
+            mPhoto.setLayoutParams(getVideoViewLayoutParams());
             mPhoto.setScaleType(ImageView.ScaleType.FIT_XY);
         } else {
+            mPhoto.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
             mPhoto.setScaleType(ImageView.ScaleType.FIT_CENTER);
         }
         captureBitmap = bitmap;
@@ -596,4 +630,22 @@ public class JCameraView extends FrameLayout implements CameraInterface.CameraOp
                 break;
         }
     }
+
+
+
+    @Override
+    public void onCameraPrepared(int previewWidth, int previewHeight, float screenRate) {
+        if (mVideoView == null) {
+            return;
+        }
+        this.previewHeight = previewHeight;
+        this.previewWidth = previewWidth;
+        mVideoView.post(new Runnable() {
+            @Override
+            public void run() {
+                setVideoViewSize(getVideoViewLayoutParams());
+            }
+        });
+    }
+
 }
